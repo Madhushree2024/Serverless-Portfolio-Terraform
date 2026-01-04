@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps Terminal | Access Granted</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #020617;
+            font-family: 'Fira Code', monospace;
+        }
+        .neon-border {
+            box-shadow: 0 0 15px #06b6d4, inset 0 0 5px #06b6d4;
+            border: 1px solid #06b6d4;
+        }
+        .glitch-text {
+            text-shadow: 2px 0 #ec4899, -2px 0 #06b6d4;
+        }
+        .scanline {
+            width: 100%;
+            height: 2px;
+            background: rgba(6, 182, 212, 0.1);
+            position: absolute;
+            animation: scan 4s linear infinite;
+        }
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen overflow-hidden">
+    <div class="scanline"></div>
+
+    <main class="relative z-10 w-full max-w-2xl p-8 mx-4 bg-slate-900/80 backdrop-blur-md neon-border rounded-sm">
+        <header class="mb-8 border-b border-cyan-900 pb-4">
+            <h1 class="text-2xl font-bold tracking-tighter text-cyan-400 glitch-text uppercase">
+                > System.Portfolio_Active
+            </h1>
+            <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Status: Operational // Region: us-east-1</p>
+        </header>
+
+        <section class="mb-10">
+            <h2 class="text-4xl font-bold text-white mb-2">CLOUD ENGINEER</h2>
+            <p class="text-cyan-500/80 font-semibold italic">// Automating the Future with Code</p>
+        </section>
+
+        <section class="mb-10 bg-black/40 p-6 rounded border border-slate-800 text-center">
+            <p class="text-xs text-slate-400 mb-2 uppercase tracking-widest">Global Visitor Logs</p>
+            <div id="counter" class="text-6xl font-bold text-pink-500 drop-shadow-[0_0_10px_rgba(236,72,153,0.5)]">
+                0000
+            </div>
+        </section>
+
+        <div class="flex flex-wrap gap-3 mb-8">
+            <span class="px-3 py-1 text-xs border border-cyan-500/30 text-cyan-400 bg-cyan-950/20">TERRAFORM</span>
+            <span class="px-3 py-1 text-xs border border-pink-500/30 text-pink-400 bg-pink-950/20">AWS LAMBDA</span>
+            <span class="px-3 py-1 text-xs border border-cyan-500/30 text-cyan-400 bg-cyan-950/20">DYNAMODB</span>
+            <span class="px-3 py-1 text-xs border border-pink-500/30 text-pink-400 bg-pink-950/20">CLOUDFRONT</span>
+        </div>
+
+        <footer class="text-[10px] text-slate-600 font-mono flex justify-between uppercase">
+            <span>&copy; 2026 INFRASTRUCTURE_AS_CODE</span>
+            <span class="animate-pulse">● System Secure</span>
+        </footer>
+    </main>
+
+    <script>
+        // REPLACE WITH YOUR ACTUAL API URL
+        const api_url = 'https://coxiiip2tk.execute-api.us-east-1.amazonaws.com/count';
+        
+        async function getCount() {
+            try {
+                const response = await fetch(api_url);
+                const data = await response.json();
+                // Formats number to 4 digits (e.g., 0005)
+                document.getElementById('counter').innerText = data.count.toString().padStart(4, '0');
+            } catch (error) {
+                console.error('System Error:', error);
+                document.getElementById('counter').innerText = "ERR_";
+            }
+        }
+        getCount();
+    </script>
+</body>
+</html>

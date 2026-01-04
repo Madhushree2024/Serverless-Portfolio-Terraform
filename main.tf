@@ -1,0 +1,224 @@
+# 1. THE STORAGE (S3 BUCKET)
+resource "aws_s3_bucket" "my_portfolio" {
+  # CHANGE THIS: Must be unique globally
+  bucket = "my-portfolio-unique-name-12345" 
+
+  tags = {
+    Name        = "Portfolio Bucket"
+    Environment = "Dev"
+  }
+}
+
+# 2. STATIC WEBSITE CONFIGURATION
+resource "aws_s3_bucket_website_configuration" "portfolio_config" {
+  bucket = aws_s3_bucket.my_portfolio.id
+
+  index_document {
+    suffix = "index.html"
+  }
+}
+
+# 3. VERSIONING (Best Practice)
+resource "aws_s3_bucket_versioning" "portfolio_versioning" {
+  bucket = aws_s3_bucket.my_portfolio.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# 4. PUBLIC ACCESS SETTINGS
+resource "aws_s3_bucket_public_access_block" "public_access" {
+  bucket = aws_s3_bucket.my_portfolio.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+# 5. BUCKET POLICY (Allows anyone to read the website files)
+resource "aws_s3_bucket_policy" "allow_public_access" {
+  bucket = aws_s3_bucket.my_portfolio.id
+  depends_on = [aws_s3_bucket_public_access_block.public_access]
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.my_portfolio.arn}/*"
+      },
+    ]
+  })
+}
+
+# 6. AUTOMATIC FILE UPLOAD
+resource "aws_s3_object" "upload_index" {
+  bucket       = aws_s3_bucket.my_portfolio.id
+  key          = "index.html"
+  source       = "index.html" # Looks for a file named index.html in your folder
+  content_type = "text/html"
+  etag         = filemd5("index.html") # Re-uploads only if the file changes
+}
+
+# 7. CLOUDFRONT CDN (The "Professional" Layer)
+resource "aws_cloudfront_distribution" "s3_distribution" {
+  origin {
+    domain_name = aws_s3_bucket.my_portfolio.bucket_regional_domain_name
+    origin_id   = "S3-${aws_s3_bucket.my_portfolio.bucket}"
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-${aws_s3_bucket.my_portfolio.bucket}"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https" # Forces HTTPS
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+# 8. THE OUTPUTS (The links you need)
+output "s3_website_url" {
+  value = aws_s3_bucket_website_configuration.portfolio_config.website_endpoint
+}
+
+output "cloudfront_url" {
+  value = aws_cloudfront_distribution.s3_distribution.domain_name
+}
+
+# 9. Create DynamoDB Table to store visitor count
+resource "aws_dynamodb_table" "visitor_count" {
+  name         = "visitor_counter"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
+# Insert the initial record (starts at 0)
+resource "aws_dynamodb_table_item" "initial_count" {
+  table_name = aws_dynamodb_table.visitor_count.name
+  hash_key   = aws_dynamodb_table.visitor_count.hash_key
+
+  item = <<ITEM
+{
+  "id": {"S": "visitors"},
+  "count": {"N": "0"}
+}
+ITEM
+}
+
+# 10. Lambda Function & Permissions
+resource "aws_iam_role" "lambda_role" {
+  name = "portfolio_lambda_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "dynamodb_policy" {
+  name = "lambda_dynamodb_policy"
+  role = aws_iam_role.lambda_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:UpdateItem", "dynamodb:GetItem"]
+      Resource = aws_dynamodb_table.visitor_count.arn
+    }]
+  })
+}
+
+# Zip the python file (Lambda requires files to be zipped)
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_file = "lambda_function.py"
+  output_path = "lambda_function.zip"
+}
+
+resource "aws_lambda_function" "visitor_counter" {
+  filename      = "lambda_function.zip"
+  function_name = "visitor_counter_func"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.9"
+
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+}
+
+# 11. API Gateway (The URL for your Lambda)
+resource "aws_apigatewayv2_api" "visitor_api" {
+  name          = "visitor_counter_api"
+  protocol_type = "HTTP"
+  cors_configuration {
+    allow_origins = ["*"] # Allows your website to call the API
+    allow_methods = ["GET"]
+  }
+}
+
+resource "aws_apigatewayv2_stage" "api_stage" {
+  api_id      = aws_apigatewayv2_api.visitor_api.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+resource "aws_apigatewayv2_integration" "lambda_integration" {
+  api_id           = aws_apigatewayv2_api.visitor_api.id
+  integration_type = "AWS_PROXY"
+  integration_uri  = aws_lambda_function.visitor_counter.invoke_arn
+}
+
+resource "aws_apigatewayv2_route" "api_route" {
+  api_id    = aws_apigatewayv2_api.visitor_api.id
+  route_key = "GET /count"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+}
+
+# Permission for API Gateway to call Lambda
+resource "aws_lambda_permission" "api_gw" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.visitor_counter.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.visitor_api.execution_arn}/*/*"
+}
+
+# Output the API URL
+output "api_url" {
+  value = "${aws_apigatewayv2_api.visitor_api.api_endpoint}/count"
+}
