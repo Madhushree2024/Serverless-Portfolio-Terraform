@@ -1,12 +1,5 @@
-resource "aws_s3_object" "upload_favicon" {
-  bucket       = aws_s3_bucket.my_portfolio.id
-  key          = "favicon.ico"
-  source       = "favicon.ico"
-  content_type = "image/x-icon"
-}
 # 1. THE STORAGE (S3 BUCKET)
 resource "aws_s3_bucket" "my_portfolio" {
-  # CHANGE THIS: Must be unique globally
   bucket = "madhushree-portfolio-site-2026" 
 
   tags = {
@@ -24,7 +17,7 @@ resource "aws_s3_bucket_website_configuration" "portfolio_config" {
   }
 }
 
-# 3. VERSIONING (Best Practice)
+# 3. VERSIONING
 resource "aws_s3_bucket_versioning" "portfolio_versioning" {
   bucket = aws_s3_bucket.my_portfolio.id
   versioning_configuration {
@@ -38,11 +31,11 @@ resource "aws_s3_bucket_public_access_block" "public_access" {
 
   block_public_acls       = false
   block_public_policy     = false
-  ignore_public_acls      = false
+  ignore_public_acls       = false
   restrict_public_buckets = false
 }
 
-# 5. BUCKET POLICY (Allows anyone to read the website files)
+# 5. BUCKET POLICY
 resource "aws_s3_bucket_policy" "allow_public_access" {
   bucket = aws_s3_bucket.my_portfolio.id
   depends_on = [aws_s3_bucket_public_access_block.public_access]
@@ -61,16 +54,23 @@ resource "aws_s3_bucket_policy" "allow_public_access" {
   })
 }
 
-# 6. AUTOMATIC FILE UPLOAD
+# 6. AUTOMATIC FILE UPLOADS
 resource "aws_s3_object" "upload_index" {
   bucket       = aws_s3_bucket.my_portfolio.id
   key          = "index.html"
-  source       = "index.html" # Looks for a file named index.html in your folder
+  source       = "index.html"
   content_type = "text/html"
-  etag         = filemd5("index.html") # Re-uploads only if the file changes
+  etag         = filemd5("index.html")
 }
 
-# 7. CLOUDFRONT CDN (The "Professional" Layer)
+resource "aws_s3_object" "upload_favicon" {
+  bucket       = aws_s3_bucket.my_portfolio.id
+  key          = "favicon.ico"
+  source       = "favicon.ico"
+  content_type = "image/x-icon"
+}
+
+# 7. CLOUDFRONT CDN
 resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
     domain_name = aws_s3_bucket.my_portfolio.bucket_regional_domain_name
@@ -93,7 +93,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       }
     }
 
-    viewer_protocol_policy = "redirect-to-https" # Forces HTTPS
+    viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
     default_ttl            = 3600
     max_ttl                = 86400
@@ -110,18 +110,9 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
 }
 
-# 8. THE OUTPUTS (The links you need)
-output "s3_website_url" {
-  value = aws_s3_bucket_website_configuration.portfolio_config.website_endpoint
-}
-
-output "cloudfront_url" {
-  value = aws_cloudfront_distribution.s3_distribution.domain_name
-}
-
-# 9. Create DynamoDB Table to store visitor count
+# 8. DYNAMODB (Visitor Tracking)
 resource "aws_dynamodb_table" "visitor_count" {
-  name = "visitor_counter_v2"
+  name         = "visitor_counter_v2"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "id"
 
@@ -131,20 +122,29 @@ resource "aws_dynamodb_table" "visitor_count" {
   }
 }
 
-# Insert the initial record (starts at 0)
+# PRO-UPDATE: Initial Record with Lifecycle Protection
 resource "aws_dynamodb_table_item" "initial_count" {
   table_name = aws_dynamodb_table.visitor_count.name
   hash_key   = aws_dynamodb_table.visitor_count.hash_key
 
-  item = <<ITEM
-{
-  "id": {"S": "visitors"},
-  "count": {"N": "0"}
-}
-ITEM
+  item = jsonencode({
+    id    = { S = "visitors" }
+    count = { N = "0" }
+  })
+
+  # This prevents the count from resetting to 0 every time you deploy!
+  lifecycle {
+    ignore_changes = [item]
+  }
 }
 
-# 10. Lambda Function & Permissions
+# 9. CLOUDWATCH LOGS (Pre-create the group)
+resource "aws_cloudwatch_log_group" "lambda_log" {
+  name              = "/aws/lambda/visitor_counter_func_v2"
+  retention_in_days = 7
+}
+
+# 10. LAMBDA & IAM
 resource "aws_iam_role" "lambda_role" {
   name = "portfolio_lambda_role_v2"
   assume_role_policy = jsonencode({
@@ -157,20 +157,30 @@ resource "aws_iam_role" "lambda_role" {
   })
 }
 
-resource "aws_iam_role_policy" "dynamodb_policy" {
-  name = "lambda_dynamodb_policy"
+# PRO-UPDATE: Unified permissions for DB and Logging
+resource "aws_iam_role_policy" "lambda_policy" {
+  name = "lambda_combined_policy"
   role = aws_iam_role.lambda_role.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["dynamodb:UpdateItem", "dynamodb:GetItem"]
-      Resource = aws_dynamodb_table.visitor_count.arn
-    }]
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:UpdateItem", "dynamodb:GetItem"]
+        Resource = aws_dynamodb_table.visitor_count.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "${aws_cloudwatch_log_group.lambda_log.arn}:*"
+      }
+    ]
   })
 }
 
-# Zip the python file (Lambda requires files to be zipped)
 data "archive_file" "lambda_zip" {
   type        = "zip"
   source_file = "lambda_function.py"
@@ -178,21 +188,20 @@ data "archive_file" "lambda_zip" {
 }
 
 resource "aws_lambda_function" "visitor_counter" {
-  filename      = "lambda_function.zip"
-  function_name = "visitor_counter_func_v2"
-  role          = aws_iam_role.lambda_role.arn
-  handler       = "lambda_function.lambda_handler"
-  runtime       = "python3.9"
-
+  filename         = "lambda_function.zip"
+  function_name    = "visitor_counter_func_v2"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "lambda_function.lambda_handler"
+  runtime          = "python3.9"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 }
 
-# 11. API Gateway (The URL for your Lambda)
+# 11. API GATEWAY
 resource "aws_apigatewayv2_api" "visitor_api" {
   name          = "visitor_counter_api"
   protocol_type = "HTTP"
   cors_configuration {
-    allow_origins = ["*"] # Allows your website to call the API
+    allow_origins = ["*"]
     allow_methods = ["GET"]
   }
 }
@@ -215,7 +224,6 @@ resource "aws_apigatewayv2_route" "api_route" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
-# Permission for API Gateway to call Lambda
 resource "aws_lambda_permission" "api_gw" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
@@ -224,7 +232,11 @@ resource "aws_lambda_permission" "api_gw" {
   source_arn    = "${aws_apigatewayv2_api.visitor_api.execution_arn}/*/*"
 }
 
-# Output the API URL
+# 12. OUTPUTS
+output "cloudfront_url" {
+  value = aws_cloudfront_distribution.s3_distribution.domain_name
+}
+
 output "api_url" {
   value = "${aws_apigatewayv2_api.visitor_api.api_endpoint}/count"
 }
