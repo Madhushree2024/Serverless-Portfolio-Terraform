@@ -1,11 +1,4 @@
 
-terraform {
-  backend "s3" {
-    bucket = "a-different-unique-bucket-name-for-state" # You must create this bucket once manually
-    key    = "state/terraform.tfstate"
-    region = "us-east-1"
-  }
-}
 # 1. THE STORAGE (S3 BUCKET)
 resource "aws_s3_bucket" "my_portfolio" {
   # CHANGE THIS: Must be unique globally
