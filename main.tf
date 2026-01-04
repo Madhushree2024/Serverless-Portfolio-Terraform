@@ -1,4 +1,9 @@
-
+resource "aws_s3_object" "upload_favicon" {
+  bucket       = aws_s3_bucket.my_portfolio.id
+  key          = "favicon.ico"
+  source       = "favicon.ico"
+  content_type = "image/x-icon"
+}
 # 1. THE STORAGE (S3 BUCKET)
 resource "aws_s3_bucket" "my_portfolio" {
   # CHANGE THIS: Must be unique globally
