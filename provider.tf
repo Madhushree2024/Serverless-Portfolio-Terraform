@@ -9,6 +9,8 @@ terraform {
 
 provider "aws" {
   region = "us-east-1"
-  # Do not put keys here! 
-  # Terraform will automatically find them from the GitHub Secrets.
 }
+
+
+
+# Final deployment attempt
