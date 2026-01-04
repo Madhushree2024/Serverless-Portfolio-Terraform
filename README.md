@@ -25,10 +25,6 @@ This project is an end-to-end serverless portfolio platform architected for high
 
 ---
 
-## 🏗️ Architecture Diagram
-
-
----
 
 ## 📊 Proof of Work (Verified Jan 4, 2026)
 The project is fully operational and validated through the following metrics:
