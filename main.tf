@@ -1,7 +1,15 @@
+
+terraform {
+  backend "s3" {
+    bucket = "a-different-unique-bucket-name-for-state" # You must create this bucket once manually
+    key    = "state/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
 # 1. THE STORAGE (S3 BUCKET)
 resource "aws_s3_bucket" "my_portfolio" {
   # CHANGE THIS: Must be unique globally
-  bucket = "my-portfolio-unique-name-12345" 
+  bucket = "madhushree-portfolio-site-2026" 
 
   tags = {
     Name        = "Portfolio Bucket"
@@ -115,7 +123,7 @@ output "cloudfront_url" {
 
 # 9. Create DynamoDB Table to store visitor count
 resource "aws_dynamodb_table" "visitor_count" {
-  name         = "visitor_counter"
+  name = "visitor_counter_v2"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "id"
 
@@ -140,7 +148,7 @@ ITEM
 
 # 10. Lambda Function & Permissions
 resource "aws_iam_role" "lambda_role" {
-  name = "portfolio_lambda_role"
+  name = "portfolio_lambda_role_v2"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -173,7 +181,7 @@ data "archive_file" "lambda_zip" {
 
 resource "aws_lambda_function" "visitor_counter" {
   filename      = "lambda_function.zip"
-  function_name = "visitor_counter_func"
+  function_name = "visitor_counter_func_v2"
   role          = aws_iam_role.lambda_role.arn
   handler       = "lambda_function.lambda_handler"
   runtime       = "python3.9"

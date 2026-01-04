@@ -7,10 +7,9 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "my-portfolio-unique-name-12345" # Use your actual bucket name
-    key            = "portfolio/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
+    bucket = "madhushree-tf-state-2026" # <--- YOUR NEW STATE BUCKET NAME HERE
+    key    = "terraform.tfstate"
+    region = "us-east-1"
   }
 }
 
