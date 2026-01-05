@@ -38,7 +38,7 @@ The project is fully operational and validated through the following metrics:
 ## 📁 Repository Structure
 ```text
 ├── .github/workflows/
-│   └── terraform.yml      # CI/CD pipeline definition
+│   └── deploy.yml      # CI/CD pipeline definition
 ├── main.tf                # Comprehensive Terraform configuration
 ├── lambda_function.py     # Backend Python logic
 ├── index.html             # Frontend portfolio site
